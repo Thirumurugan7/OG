@@ -1,0 +1,24 @@
+syntaxt to move
+move helper
+chatbot
+extenstion
+
+download
+runner
+debug
+document creation
+
+chrome extenstion
+
+Im created the text edtior web based edtior... it's fully based on ai you can ask the dougth and documantation using ai chatbot or use can use [ctrl + k] to select the code you can ask or modify or correct the code by ai.
+it's also have the feature of code runner and debugger and also have the feature of document creation.
+it's also have the feature of chrome extenstion so you can use it in chrome browser
+it's support all of the file extension but the gpt exactlly trainned for move language only
+here also a code generation and you can convert any phodo code like [python, js, c phodo code..ect] to [move, rust or solidity]
+
+You can use:
+- generate code
+- improve code
+- explain code
+
+we are providing the api, vs code extension and chrome extension.

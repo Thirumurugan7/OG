@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VS Code Editor</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor/min/vs/editor/editor.main.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            background-color: #1e1e1e;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        #sidebar {
+            width: 20%;
+            background: #252526;
+            padding: 10px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            border-right: 1px solid #3c3c3c;
+        }
+        #editor-container {
+            width: 80%;
+            height: 100vh;
+        }
+        #controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        label {
+            background-color: #0e639c;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        label:hover {
+            background-color: #1177bb;
+        }
+        .file-item, .folder-item {
+            cursor: pointer;
+            padding: 5px 10px;
+            margin: 2px 0;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .folder-item:hover, .file-item:hover {
+            background: #373737;
+        }
+        .folder-item::before {
+            content: '📁';
+            margin-right: 5px;
+        }
+        .file-item::before {
+            content: '📄';
+            margin-right: 5px;
+        }
+        .folder-item.open::before {
+            content: '📂';
+        }
+        ul {
+            padding-left: 20px;
+            list-style-type: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div id="controls">
+            <label for="folder-input">Upload Folder</label>
+            <input type="file" id="folder-input" webkitdirectory directory multiple>
+        </div>
+        <div id="file-tree"></div>
+    </div>
+    <div id="editor-container"></div>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor/min/vs/loader.js"></script>
+    <script>
+        let editor;
+        let currentFileHandle;
+        let fileHandles = {};
+
+        require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor/min/vs' }});
+        require(['vs/editor/editor.main'], function() {
+            monaco.editor.defineTheme('myCustomTheme', {
+                base: 'vs-dark',
+                inherit: true,
+                rules: [{ background: '1e1e1e' }],
+                colors: {
+                    'editor.background': '#1e1e1e',
+                }
+            });
+
+            // Register Move language
+            monaco.languages.register({ id: 'move' });
+
+            monaco.languages.setMonarchTokensProvider('move', {
+                keywords: [
+                    'fun', 'module', 'resource', 'struct', 'public', 'script', 'use', 'move_to', 'move_from',
+                    'borrow_global', 'borrow_global_mut', 'copy', 'move', 'if', 'else', 'return', 'let',
+                    'true', 'false'
+                ],
+                typeKeywords: [
+                    'address', 'signer', 'u8', 'u64', 'u128', 'bool', 'vector'
+                ],
+                operators: [
+                    '=', '>', '<', '!', '~', '?', ':', '==', '<=', '>=', '!=', '&&', '||', '++', '--', '+', '-', '*', '/', '&', '|', '^', '%', '<<', '>>', '>>>', '+=', '-=', '*=', '/=', '&=', '|=', '^=', '%=', '<<=', '>>=', '>>>='
+                ],
+                symbols:  /[=><!~?:&|+\-*\/\^%]+/,
+                tokenizer: {
+                    root: [
+                        [/[{}]/, "delimiter.bracket"],
+                        [/[()\[\]]/, "delimiter.parenthesis"],
+                        [/[,:;]/, "delimiter"],
+                        [/[a-z_$][\w$]*/, {
+                            cases: {
+                                '@keywords': 'keyword',
+                                '@typeKeywords': 'type.keyword',
+                                '@default': 'identifier'
+                            }
+                        }],
+                        { include: '@whitespace' },
+                        [/\d+/, 'number'],
+                        [/".*?"/, 'string'],
+                    ],
+
+                    whitespace: [
+                        [/[ \t\r\n]+/, ''],
+                        [/\/\/.*$/, 'comment'],
+                        [/\/\*/, { token: 'comment.quote', next: '@comment' }],
+                    ],
+
+                    comment: [
+                        [/[^\/*]+/, 'comment'],
+                        [/\*\//, { token: 'comment.quote', next: '@pop' }],
+                        [/[\/*]/, 'comment']
+                    ],
+                }
+            });
+
+            monaco.languages.setLanguageConfiguration('move', {
+                comments: {
+                    lineComment: "//",
+                    blockComment: ["/*", "*/"]
+                },
+                brackets: [
+                    ["{", "}"],
+                    ["[", "]"],
+                    ["(", ")"]
+                ],
+                autoClosingPairs: [
+                    { open: "{", close: "}" },
+                    { open: "[", close: "]" },
+                    { open: "(", close: ")" },
+                    { open: "\"", close: "\"", notIn: ["string"] }
+                ],
+                surroundingPairs: [
+                    { open: "{", close: "}" },
+                    { open: "[", close: "]" },
+                    { open: "(", close: ")" },
+                    { open: "\"", close: "\"" }
+                ]
+            });
+
+            editor = monaco.editor.create(document.getElementById('editor-container'), {
+                value: '',
+                language: 'move',
+                theme: 'myCustomTheme',
+                automaticLayout: true,
+                lineNumbers: 'on',
+                roundedSelection: false,
+                scrollBeyondLastLine: false,
+                readOnly: false,
+                minimap: {
+                    enabled: true
+                }
+            });
+
+            // Add an event listener for Ctrl+K
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, function() {
+                const selectedText = editor.getModel().getValueInRange(editor.getSelection());
+                const wholeCode = editor.getValue();
+                const cursorPosition = editor.getPosition();
+                const query = prompt("Enter your input:");
+                if (query !== null) {
+                    sendQuery(wholeCode, selectedText, query, cursorPosition);
+                }
+            });
+
+            // Add an event listener for Ctrl+S
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, function() {
+                if (currentFileHandle) {
+                    saveFile(currentFileHandle);
+                } else {
+                    alert("No file selected to save.");
+                }
+            });
+        });
+
+        function sendQuery(wholeCode, selectedText, query, cursorPosition) {
+            fetch('/ask', {
+                method: 'POST', // Changed from 'GET' to 'POST'
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    whole_code: wholeCode,
+                    selected_text: selectedText,
+                    query: query
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.answer) {
+                    insertText(data.answer, cursorPosition);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+
+        function insertText(text, position) {
+            const range = editor.getSelection();
+            const id = { major: 1, minor: 1 }; // An unique identifier for the operation
+            const op = {
+                identifier: id,
+                range: range,
+                text: text,
+                forceMoveMarkers: true
+            };
+            editor.executeEdits("my-source", [op]);
+            editor.focus();
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        document.getElementById('folder-input').addEventListener('change', function(event) {
+            const files = event.target.files;
+            const fileTree = buildFileTree(files);
+            displayFileTree(fileTree);
+        });
+
+        function buildFileTree(files) {
+            const tree = {};
+            Array.from(files).forEach(file => {
+                const parts = file.webkitRelativePath.split('/');
+                let current = tree;
+                parts.forEach((part, index) => {
+                    if (index === parts.length - 1) {
+                        if (!current.files) current.files = [];
+                        current.files.push({ name: part, file, handle: file });
+                    } else {
+                        if (!current[part]) current[part] = {};
+                        current = current[part];
+                    }
+                });
+            });
+            return tree;
+        }
+
+        function displayFileTree(tree, container = document.getElementById('file-tree')) {
+            container.innerHTML = '';
+            const ul = document.createElement('ul');
+            ul.style.listStyleType = 'none';
+            ul.style.padding = 0;
+            for (const key in tree) {
+                if (key === 'files') {
+                    tree[key].forEach(file => {
+                        const li = document.createElement('li');
+                        li.textContent = file.name;
+                        li.className = 'file-item';
+                        li.onclick = () => openFile(file);
+                        ul.appendChild(li);
+                    });
+                } else {
+                    const li = document.createElement('li');
+                    li.textContent = key;
+                    li.className = 'folder-item';
+                    li.onclick = () => {
+                        toggleFolder(li);
+                        li.classList.toggle('open');
+                    };
+                    const nestedUl = document.createElement('ul');
+                    nestedUl.style.listStyleType = 'none';
+                    nestedUl.style.paddingLeft = '20px';
+                    nestedUl.style.display = 'none';
+                    displayFileTree(tree[key], nestedUl);
+                    li.appendChild(nestedUl);
+                    ul.appendChild(li);
+                }
+            }
+            container.appendChild(ul);
+        }
+
+        function toggleFolder(element) {
+            const nestedUl = element.querySelector('ul');
+            nestedUl.style.display = nestedUl.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function openFile(file) {
+            currentFileHandle = file.handle;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const content = e.target.result;
+                const language = getLanguageFromFileExtension(file.name);
+                monaco.editor.setModelLanguage(editor.getModel(), language);
+                editor.setValue(content);
+            };
+            reader.readAsText(file.file);
+        }
+
+        async function saveFile(handle) {
+            try {
+                const writable = await handle.createWritable();
+                await writable.write(editor.getValue());
+                await writable.close();
+                alert("File saved successfully!");
+            } catch (err) {
+                console.error("Error saving file:", err);
+                alert("Failed to save file.");
+            }
+        }
+
+        function getLanguageFromFileExtension(fileName) {
+            const extension = fileName.split('.').pop();
+            const languageMap = {
+                'js': 'javascript',
+                'py': 'python',
+                'html': 'html',
+                'css': 'css',
+                'json': 'json',
+                'move': 'move',  // Add Move language mapping
+                // Add more mappings as needed
+            };
+            return languageMap[extension] || 'plaintext';
+        }
+    </script>
+</body>
+</html>

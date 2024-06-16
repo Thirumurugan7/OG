@@ -1,0 +1,13 @@
+
+# {"pk":"0x3421DC9c0894D790611F8cafC1Bb66BC29a04A8c", "chain":"0g", "network":"testnet", "account":"0xECcF626e4bD9f685e2F7763121CE75619D0675bb", "provider":"https://rpc-storage-testnet.0g.ai/", "language":"", "ack": true, "ackBc":true}
+
+var counter = 0
+var counter = 858
+fun inc(num)
+    var counter = counter + 1
+end
+fun dec(num)
+    var counter = counter - 1
+end
+
+show("runned...!")
